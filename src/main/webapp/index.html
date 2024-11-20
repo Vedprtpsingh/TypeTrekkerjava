@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>TypeTrekker - Typing Speed Test</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.7.1/chart.min.js"></script>
+</head>
+
+<body class="bg-gray-100 flex flex-col items-center justify-center min-h-screen">
+    <div class="container mx-auto px-4 py-8 max-w-4xl">
+        <h1 class="text-4xl font-bold text-center mb-8 text-blue-600">
+            TypeTrekker
+        </h1>
+
+        <div id="game-container" class="bg-white rounded-lg shadow-lg p-6">
+            <div id="text-display" class="text-xl text-gray-700 mb-6 min-h-[100px] border p-4 rounded">
+                Click "Start Test" to begin your typing challenge!
+            </div>
+
+            <textarea id="typing-input" rows="4" class="w-full p-4 border rounded text-lg mb-4"
+                placeholder="Start typing here when the test begins..." disabled></textarea>
+
+                <div class="flex justify-between items-center">
+                    <div>
+                        <button 
+                            id="start-btn" 
+                            class="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded"
+                        >
+                            Start Test
+                        </button>
+                        
+                        <button 
+                            id="reset-btn" 
+                            class="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded ml-2"
+                            disabled
+                        >
+                            Reset
+                        </button>
+                        
+                        <button 
+                            id="finish-btn" 
+                            class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded ml-2"
+                            disabled
+                        >
+                            Finish
+                        </button>
+                    </div>
+                    
+                    <div id="timer" class="text-xl font-semibold text-blue-600">
+                        Time: 60s
+                    </div>
+                </div>
+
+            <div id="stats" class="mt-6 grid grid-cols-3 gap-4">
+                <div class="bg-blue-100 p-4 rounded text-center">
+                    <h3 class="font-bold">WPM</h3>
+                    <p id="wpm-display" class="text-2xl">0</p>
+                </div>
+                <div class="bg-green-100 p-4 rounded text-center">
+                    <h3 class="font-bold">Accuracy</h3>
+                    <p id="accuracy-display" class="text-2xl">0%</p>
+                </div>
+                <div class="bg-purple-100 p-4 rounded text-center">
+                    <h3 class="font-bold">Errors</h3>
+                    <p id="errors-display" class="text-2xl">0</p>
+                </div>
+            </div>
+
+            <canvas id="performance-chart" class="mt-6" height="200"></canvas>
+        </div>
+    </div>
+
+    <script>
+        // Typing Test Game Logic
+        const textDisplay = document.getElementById("text-display");
+        const typingInput = document.getElementById("typing-input");
+        const startBtn = document.getElementById("start-btn");
+        const resetBtn = document.getElementById("reset-btn");
+        const timerDisplay = document.getElementById("timer");
+        const wpmDisplay = document.getElementById("wpm-display");
+        const accuracyDisplay = document.getElementById("accuracy-display");
+        const errorsDisplay = document.getElementById("errors-display");
+        const performanceChart = document.getElementById("performance-chart");
+        const finishBtn = document.getElementById('finish-btn');
+
+        const TEXTS = [
+            "The quick brown fox jumps over the lazy dog.",
+            "Programming is not about what you know, but what you can figure out.",
+            "Success is not final, failure is not fatal: it is the courage to continue that counts.",
+            "In the world of technology, innovation is the key to progress.",
+            "Learning never exhausts the mind, it only strengthens it.",
+        ];
+
+        let timeLeft = 60;
+        let timer;
+        let startTime;
+        let wpmHistory = [];
+        let performanceChartInstance;
+        let currentWordIndex = 0; // Track the current word index
+
+        const finishGame = () => {
+    endGame(true); // Call endGame with true to indicate completion
+};
+const initializeGame = () => {
+    const randomText = TEXTS[Math.floor(Math.random() * TEXTS.length)];
+    const words = randomText
+        .split(" ")
+        .map((word) => `<span class="text-blue-500">${word}</span>`)
+        .join(" ");
+    textDisplay.innerHTML = words; // Set the innerHTML to highlight words
+    typingInput.value = "";
+    typingInput.disabled = false;
+    typingInput.focus();
+
+    timeLeft = 60;
+    timerDisplay.textContent = `Time: ${timeLeft}s`;
+    wpmDisplay.textContent = "0";
+    accuracyDisplay.textContent = "0%";
+    errorsDisplay.textContent = "0";
+
+    startBtn.disabled = true;
+    resetBtn.disabled = false;
+    finishBtn.disabled = false; // Enable the Finish button
+    wpmHistory = [];
+    currentWordIndex = 0; // Reset current word index
+
+    startTime = new Date();
+    timer = setInterval(updateTimer, 1000);
+};
+
+        const updateTimer = () => {
+            timeLeft--;
+            timerDisplay.textContent = `Time: ${timeLeft}s`;
+
+            const currentText = typingInput.value;
+            const targetText = textDisplay.textContent;
+            const { wpm, accuracy, errors } = calculateStats(
+                currentText,
+                targetText
+            );
+
+            wpmDisplay.textContent = Math.round(wpm);
+            accuracyDisplay.textContent = `${Math.round(accuracy)}%`;
+            errorsDisplay.textContent = errors;
+            wpmHistory.push(Math.round(wpm));
+
+            updatePerformanceChart();
+            highlightCurrentWord(currentText); // Highlight the current word being typed
+
+            // Check if the user has completed typing the target text
+            if (currentText.trim() === targetText.trim()) {
+                endGame(true); // Pass true to indicate completion
+            }
+
+            if (timeLeft === 0) {
+                endGame(false); // Pass false to indicate time is up
+            }
+        };
+
+        // Function to highlight the current word
+        const highlightCurrentWord = (currentText) => {
+            const words = textDisplay.textContent.split(" ");
+            const currentWord = words[currentWordIndex];
+
+            // Highlight the current word
+            textDisplay.innerHTML = words
+                .map((word, index) => {
+                    if (index < currentWordIndex) {
+                        return `<span class="text-green-500">${word}</span>`; // Previous words
+                    } else if (index === currentWordIndex) {
+                        return `<span class="text-blue-500">${word}</span>`; // Current word
+                    } else {
+                        return `<span class="text-blue-500">${word}</span>`; // Remaining words
+                    }
+                })
+                .join(" ");
+
+            // Check if the user typed the current word correctly
+            if (
+                currentText.trim().endsWith(" ") &&
+                currentText.trim() === currentWord
+            ) {
+                // Correctly typed
+                currentWordIndex++; // Move to the next word
+                typingInput.value = ""; // Clear input for the next word
+            } else if (currentText.trim().endsWith(" ")) {
+                // Incorrectly typed
+                // Highlight the incorrect word in red
+                textDisplay.innerHTML = words
+                    .map((word, index) => {
+                        return index === currentWordIndex
+                            ? `<span class="text-red-500">${word}</span>`
+                            : word;
+                    })
+                    .join(" ");
+            }
+        };
+
+        const calculateStats = (typed, target) => {
+            const correctChars = typed
+                .split("")
+                .filter((char, index) => char === target[index]).length;
+            const totalChars = typed.length;
+            const errors = totalChars - correctChars;
+            const timePassed = (new Date() - startTime) / 60000; // in minutes
+            const wpm = timePassed > 0 ? typed.length / 5 / timePassed : 0;
+            const accuracy = totalChars > 0 ? (correctChars / totalChars) * 100 : 0;
+
+            return { wpm, accuracy, errors };
+        };
+
+        const updatePerformanceChart = () => {
+            if (wpmHistory.length > 0) {
+                if (!performanceChartInstance) {
+                    const ctx = performanceChart.getContext("2d");
+                    performanceChartInstance = new Chart(ctx, {
+                        type: "line",
+                        data: {
+                            labels: wpmHistory.map((_, index) => `${index + 1}s`),
+                            datasets: [
+                                {
+                                    label: "WPM Progress",
+                                    data: wpmHistory,
+                                    borderColor: "rgb(75, 192, 192)",
+                                    tension: 0.1,
+                                },
+                            ],
+                        },
+                        options: {
+                            responsive: true,
+                            scales: {
+                                y: {
+                                    beginAtZero: true,
+                                    title: {
+                                        display: true,
+                                        text: "Words per Minute",
+                                    },
+                                },
+                            },
+                        },
+                    });
+                } else {
+                    performanceChartInstance.data.labels = wpmHistory.map(
+                        (_, index) => `${index + 1}s`
+                    );
+                    performanceChartInstance.data.datasets[0].data = wpmHistory;
+                    performanceChartInstance.update();
+                }
+            }
+        };
+
+        const endGame = (completed) => {
+            clearInterval(timer);
+            typingInput.disabled = true;
+            startBtn.disabled = false;
+            resetBtn.disabled = true;
+            finishBtn.disabled = true;
+            alert(`Test completed! Your WPM: ${wpmDisplay.textContent}`);
+        };
+        startBtn.addEventListener("click", initializeGame);
+        resetBtn.addEventListener("click", initializeGame);
+        finishBtn.addEventListener('click', finishGame);
+    </script>
+</body>
+</html>
